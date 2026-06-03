@@ -194,3 +194,20 @@ async def pay_bill(id: str, db: Session = Depends(get_db)):
             "status": db_bill.status
         }
     }
+
+@app.get("/bills-json", response_model=list[BillResponse])
+def list_bills_json(db: Session = Depends(get_db)):
+    """
+    Retrieve all tuition bills in JSON format.
+    """
+    return db.query(models.Bill).all()
+
+@app.get("/status")
+def get_status():
+    """
+    Healthcheck endpoint for monitoring.
+    """
+    return {
+        "status": "online",
+        "service": "Keuangan SPP Service"
+    }

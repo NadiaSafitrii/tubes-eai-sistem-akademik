@@ -78,7 +78,7 @@ services:
   # 5. Finance Microservice
   finance:
     build:
-      context: ./finance
+      context: ./keuangan
       dockerfile: Dockerfile
     container_name: finance
     ports:
@@ -155,6 +155,16 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    ports:
+      - "0:80"
+    networks:
+      - campus-network
 
 # Bagian Networks Utama
 networks:

@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Informasi Akademik Terintegrasi (EAI)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-wrapper">
+        <!-- Top Navigation Bar -->
+        <header class="navbar">
+            <div class="nav-container">
+                <div class="nav-brand">
+                    <div class="brand-logo">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 2 2 3 6 3s6-1 6-3v-5"/></svg>
+                    </div>
+                    <div class="brand-text">
+                        <span class="title">EAI Academic Portal</span>
+                        <span class="sub">Telkom University</span>
+                    </div>
+                </div>
+                
+                <nav class="nav-menu">
+                    <a href="#" class="nav-item active" data-tab="dashboard">Dashboard</a>
+                    <a href="#" class="nav-item" data-tab="siakad">SIAKAD</a>
+                    <a href="#" class="nav-item" data-tab="keuangan">Keuangan</a>
+                    <a href="#" class="nav-item" data-tab="library">Perpustakaan</a>
+                    <a href="#" class="nav-item" data-tab="attendance">Presensi</a>
+                </nav>
+
+                <div class="health-summary">
+                    <div class="health-dot-wrapper" id="health-siakad" title="SIAKAD">
+                        <span class="indicator dot-offline"></span>
+                        <span class="dot-label">SIAKAD <span class="service-status">(Offline)</span></span>
+                    </div>
+                    <div class="health-dot-wrapper" id="health-keuangan" title="Keuangan">
+                        <span class="indicator dot-offline"></span>
+                        <span class="dot-label">Keuangan <span class="service-status">(Offline)</span></span>
+                    </div>
+                    <div class="health-dot-wrapper" id="health-library" title="Perpustakaan">
+                        <span class="indicator dot-offline"></span>
+                        <span class="dot-label">Perpustakaan <span class="service-status">(Offline)</span></span>
+                    </div>
+                    <div class="health-dot-wrapper" id="health-attendance" title="Presensi">
+                        <span class="indicator dot-offline"></span>
+                        <span class="dot-label">Presensi <span class="service-status">(Offline)</span></span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Alert Notification Area -->
+        <div class="alert-wrapper">
+            <div id="alert-container"></div>
+        </div>
+
+        <!-- Main Body -->
+        <main class="content-container">
+            
+            <!-- TAB 1: DASHBOARD & PIPELINE -->
+            <section class="tab-pane active" id="tab-dashboard">
+                <div class="banner-card">
+                    <h2>Simulasi Integrasi Layanan Akademik</h2>
+                    <p>Demo implementasi Enterprise Application Integration (EAI) untuk sinkronisasi data mahasiswa menggunakan RabbitMQ sebagai Message Broker.</p>
+                </div>
+
+                <!-- Simple Flow Diagram Visualizer -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="card-title">Alur Sinkronisasi Event Integrasi</h3>
+                        <div class="select-container">
+                            <label for="active-student-select">Pilih Mahasiswa:</label>
+                            <select id="active-student-select" class="form-control select-student">
+                                <option value="">-- Pilih Mahasiswa untuk Dilacak --</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="flow-diagram">
+                        <div class="step" id="step-1">
+                            <div class="step-icon">SIAKAD</div>
+                            <div class="step-label">Pendaftaran</div>
+                        </div>
+                        <div class="step-line"></div>
+                        <div class="step" id="step-2">
+                            <div class="step-icon">RabbitMQ</div>
+                            <div class="step-label">Message Broker</div>
+                        </div>
+                        <div class="step-line"></div>
+                        <div class="step" id="step-3">
+                            <div class="step-icon">Keuangan</div>
+                            <div class="step-label">Tagihan SPP</div>
+                        </div>
+                        <div class="step-line"></div>
+                        <div class="step" id="step-4">
+                            <div class="step-icon">Perpustakaan</div>
+                            <div class="step-label">Hak Pinjam</div>
+                        </div>
+                        <div class="step-line"></div>
+                        <div class="step" id="step-5">
+                            <div class="step-icon">Presensi</div>
+                            <div class="step-label">Absensi Kuliah</div>
+                        </div>
+                    </div>
+                    
+                    <div class="details-box" id="stepper-details-panel">
+                        Pilih mahasiswa dari opsi di atas untuk mensimulasikan dan melacak alur pertukaran pesan secara real-time.
+                    </div>
+                </div>
+
+                <!-- Stats summary grid -->
+                <div class="grid-2">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Statistik Data Mahasiswa</h3>
+                        </div>
+                        <div class="stats-row">
+                            <div class="stat-item">
+                                <span class="val" id="stats-total-students">0</span>
+                                <span class="lbl">Mahasiswa Terdaftar</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="val text-red" id="stats-active-students">0</span>
+                                <span class="lbl">Mahasiswa Aktif</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Statistik Pembayaran SPP</h3>
+                        </div>
+                        <div class="stats-row">
+                            <div class="stat-item">
+                                <span class="val" id="stats-total-bills">0</span>
+                                <span class="lbl">Total Tagihan SPP</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="val text-success" id="stats-paid-bills">0</span>
+                                <span class="lbl">Tagihan Lunas</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 2: SIAKAD -->
+            <section class="tab-pane" id="tab-siakad">
+                <div class="grid-form-table">
+                    <!-- Form input -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Pendaftaran Mahasiswa</h3>
+                        </div>
+                        <form id="form-add-student">
+                            <div class="form-group">
+                                <label for="student-id">NIM Mahasiswa</label>
+                                <input type="text" id="student-id" class="form-control" placeholder="Contoh: 102022400063" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="student-name">Nama Mahasiswa</label>
+                                <input type="text" id="student-name" class="form-control" placeholder="Contoh: Nadia Sapitri" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="student-email">Email</label>
+                                <input type="email" id="student-email" class="form-control" placeholder="Contoh: nadia@student.ac.id" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="student-semester">Semester</label>
+                                <input type="number" id="student-semester" class="form-control" min="1" max="14" value="1" required>
+                            </div>
+                            <button type="submit" class="btn btn-red btn-block">Simpan ke SIAKAD</button>
+                        </form>
+                    </div>
+
+                    <!-- Students Table -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Data Mahasiswa SIAKAD</h3>
+                            <button id="btn-refresh-students" class="btn btn-sm btn-outline">Refresh Data</button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table" id="table-students">
+                                <thead>
+                                    <tr>
+                                        <th>NIM</th>
+                                        <th>Nama</th>
+                                        <th>Email</th>
+                                        <th>Semester</th>
+                                        <th>Status</th>
+                                        <th>Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td colspan="6" class="text-center">Memuat data...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 3: KEUANGAN -->
+            <section class="tab-pane" id="tab-keuangan">
+                <div class="grid-form-table">
+                    <!-- Create Bill -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Terbitkan Tagihan SPP</h3>
+                        </div>
+                        <form id="form-create-bill">
+                            <div class="form-group">
+                                <label for="bill-id">ID Tagihan</label>
+                                <input type="text" id="bill-id" class="form-control" placeholder="Contoh: BILL-102" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="bill-student-id">NIM Mahasiswa</label>
+                                <input type="text" id="bill-student-id" class="form-control" placeholder="Masukkan NIM terdaftar" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="bill-amount">Jumlah Tagihan (Rp)</label>
+                                <input type="number" id="bill-amount" class="form-control" placeholder="Contoh: 7500000" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="bill-semester">Semester</label>
+                                <input type="number" id="bill-semester" class="form-control" min="1" max="14" value="1" required>
+                            </div>
+                            <button type="submit" class="btn btn-red btn-block">Terbitkan Tagihan</button>
+                        </form>
+                    </div>
+
+                    <!-- Bills Table -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Status Tagihan Kuliah</h3>
+                            <button id="btn-refresh-bills" class="btn btn-sm btn-outline">Refresh Data</button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table" id="table-bills">
+                                <thead>
+                                    <tr>
+                                        <th>ID Tagihan</th>
+                                        <th>NIM</th>
+                                        <th>Jumlah</th>
+                                        <th>Semester</th>
+                                        <th>Status</th>
+                                        <th>Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td colspan="6" class="text-center">Memuat data...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 4: PERPUSTAKAAN -->
+            <section class="tab-pane" id="tab-library">
+                <div class="grid-form-table">
+                    <!-- Library Controls -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Simulasi Peminjaman</h3>
+                        </div>
+                        
+                        <div class="inner-section">
+                            <h4>Cek Status Anggota</h4>
+                            <div class="input-inline">
+                                <input type="text" id="lib-check-nim" class="form-control" placeholder="Masukkan NIM">
+                                <button id="btn-check-lib" class="btn btn-outline">Cek Status</button>
+                            </div>
+                            <div id="lib-status-result" class="result-message"></div>
+                        </div>
+                        
+                        <form id="form-borrow-book" class="inner-section margin-top-20">
+                            <h4>Form Peminjaman Buku</h4>
+                            <div class="form-group">
+                                <label for="borrow-nim">NIM Mahasiswa</label>
+                                <input type="text" id="borrow-nim" class="form-control" placeholder="Masukkan NIM" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="borrow-book-id">Kode Buku</label>
+                                <input type="text" id="borrow-book-id" class="form-control" placeholder="Contoh: BOOK-01" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="borrow-book-title">Judul Buku</label>
+                                <input type="text" id="borrow-book-title" class="form-control" placeholder="Contoh: Pemrograman Web Modern" required>
+                            </div>
+                            <button type="submit" class="btn btn-red btn-block">Konfirmasi Peminjaman</button>
+                        </form>
+                    </div>
+
+                    <!-- Loans Table -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Riwayat Peminjaman Buku</h3>
+                            <div class="input-inline search-box">
+                                <input type="text" id="lib-search-nim" class="form-control form-control-sm" placeholder="Masukkan NIM">
+                                <button id="btn-refresh-loans" class="btn btn-sm btn-red">Lihat</button>
+                            </div>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table" id="table-loans">
+                                <thead>
+                                    <tr>
+                                        <th>Kode Buku</th>
+                                        <th>Judul Buku</th>
+                                        <th>Tanggal Pinjam</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td colspan="3" class="text-center">Ketik NIM mahasiswa di atas untuk melihat riwayat peminjaman.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 5: PRESENSI -->
+            <section class="tab-pane" id="tab-attendance">
+                <div class="grid-form-table">
+                    <!-- Presensi form -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Input Absensi Kuliah</h3>
+                        </div>
+                        <form id="form-record-attendance">
+                            <div class="form-group">
+                                <label for="att-student-id">NIM Mahasiswa</label>
+                                <input type="text" id="att-student-id" class="form-control" placeholder="Masukkan NIM" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="att-class-id">Kode Kelas</label>
+                                <input type="text" id="att-class-id" class="form-control" placeholder="Contoh: IF-44-01" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="att-status">Status Kehadiran</label>
+                                <select id="att-status" class="form-control">
+                                    <option value="present">Hadir</option>
+                                    <option value="permit">Izin</option>
+                                    <option value="sick">Sakit</option>
+                                    <option value="absent">Alpa</option>
+                                </select>
+                            </div>
+                            <button type="submit" class="btn btn-red btn-block">Kirim Presensi</button>
+                        </form>
+                    </div>
+
+                    <!-- Recap and Logs -->
+                    <div class="card">
+                        <div class="card-header">
+                            <h3 class="card-title">Rekapitulasi Kehadiran Mahasiswa</h3>
+                            <div class="input-inline search-box">
+                                <input type="text" id="att-search-nim" class="form-control form-control-sm" placeholder="Masukkan NIM">
+                                <button id="btn-refresh-attendance" class="btn btn-sm btn-red">Lihat</button>
+                            </div>
+                        </div>
+                        
+                        <div class="sub-nav-wrapper">
+                            <div class="tabs-sub">
+                                <button class="tab-sub-btn active" data-sub="xml-rendered">Kehadiran</button>
+                                <button class="tab-sub-btn" data-sub="xml-raw">Data XML Asli</button>
+                            </div>
+                        </div>
+                        
+                        <div class="table-responsive">
+                            <div id="xml-rendered-view" class="sub-tab-panel active">
+                                <table class="table" id="table-attendance">
+                                    <thead>
+                                        <tr>
+                                            <th>Log ID</th>
+                                            <th>Kelas</th>
+                                            <th>Status</th>
+                                            <th>Waktu Absen</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td colspan="4" class="text-center">Ketik NIM mahasiswa di atas untuk memuat data kehadiran.</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <div id="xml-raw-view" class="sub-tab-panel">
+                                <pre class="raw-code" id="raw-xml-content">Belum ada respon XML yang diambil.</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+        
+        <footer class="footer">
+            <div class="footer-container">
+                <p>&copy; 2026 Tugas Akhir EAI Kelompok. Program Studi Teknik Informatika, Telkom University.</p>
+            </div>
+        </footer>
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>

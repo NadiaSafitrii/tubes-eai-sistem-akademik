@@ -176,3 +176,20 @@ async def register_student(id: str, db: Session = Depends(get_db)):
             "status": db_student.status
         }
     }
+
+@app.get("/students", response_model=list[StudentResponse])
+def list_students(db: Session = Depends(get_db)):
+    """
+    Retrieve all students registered in SIAKAD database.
+    """
+    return db.query(models.Student).all()
+
+@app.get("/status")
+def get_status():
+    """
+    Healthcheck endpoint for monitoring.
+    """
+    return {
+        "status": "online",
+        "service": "SIAKAD Academic Service"
+    }
