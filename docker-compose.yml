@@ -1,0 +1,101 @@
+version: '3.8'
+
+services:
+  # RabbitMQ Message Broker
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"       # AMQP port
+      - "15672:15672"     # Management dashboard port
+    networks:
+      - campus-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # SIAKAD Microservice (Academic System Skeleton)
+  siakad:
+    build:
+      context: ./siakad
+      dockerfile: Dockerfile
+    container_name: siakad
+    ports:
+      - "8001:8001"
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+    networks:
+      - campus-network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  # Finance Microservice (SPP skeleton)
+  finance:
+    build:
+      context: ./finance
+      dockerfile: Dockerfile
+    container_name: finance
+    ports:
+      - "8002:8002"
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+    networks:
+      - campus-network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  # Library Microservice (Real implementation)
+  library:
+    build:
+      context: ./library
+      dockerfile: Dockerfile
+    container_name: library
+    ports:
+      - "8003:8003"
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+    networks:
+      - campus-network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  # Attendance Microservice (Real implementation)
+  attendance:
+    build:
+      context: ./attendance
+      dockerfile: Dockerfile
+    container_name: attendance
+    ports:
+      - "8004:8004"
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+    networks:
+      - campus-network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  # Nginx API Gateway
+  nginx-gateway:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: nginx-gateway
+    ports:
+      - "8000:8000"
+    networks:
+      - campus-network
+    depends_on:
+      - siakad
+      - finance
+      - library
+      - attendance
+
+networks:
+  campus-network:
+    driver: bridge
