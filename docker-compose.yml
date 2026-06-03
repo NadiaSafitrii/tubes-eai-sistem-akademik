@@ -78,7 +78,7 @@ services:
   # 5. Finance Microservice
   finance:
     build:
-      context: ./finance
+      context: ./keuangan
       dockerfile: Dockerfile
     container_name: finance
     ports:
