@@ -1,22 +1,63 @@
 version: '3.8'
 
 services:
-  # RabbitMQ Message Broker
+  # 1. RabbitMQ Message Broker
   rabbitmq:
     image: rabbitmq:3-management
     container_name: rabbitmq
     ports:
-      - "5672:5672"       # AMQP port
-      - "15672:15672"     # Management dashboard port
+      - "5672:5672"
+      - "15672:15672"
     networks:
       - campus-network
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  # SIAKAD Microservice (Academic System Skeleton)
+  # 2. MySQL Database (Untuk SIAKAD)
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: siakad
+    ports:
+      - "3307:3306"  # Port digeser ke 3307 agar tidak bentrok dengan XAMPP/Local
+    networks:
+      - campus-network
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 3. PostgreSQL Database (Untuk Keuangan)
+  postgres:
+    image: postgres:15-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: keuangan
+    ports:
+      - "5433:5432"  # Port digeser ke 5433 agar tidak bentrok dengan Local
+    networks:
+      - campus-network
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 4. SIAKAD Microservice
   siakad:
     build:
       context: ./siakad
@@ -31,8 +72,10 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      mysql:
+        condition: service_healthy
 
-  # Finance Microservice (SPP skeleton)
+  # 5. Finance Microservice
   finance:
     build:
       context: ./finance
@@ -47,8 +90,10 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
 
-  # Library Microservice (Real implementation)
+  # 6. Library Microservice
   library:
     build:
       context: ./library
@@ -64,7 +109,7 @@ services:
       rabbitmq:
         condition: service_healthy
 
-  # Attendance Microservice (Real implementation)
+  # 7. Attendance Microservice
   attendance:
     build:
       context: ./attendance
@@ -80,7 +125,7 @@ services:
       rabbitmq:
         condition: service_healthy
 
-  # Nginx API Gateway
+  # 8. Nginx API Gateway
   nginx-gateway:
     build:
       context: ./nginx
@@ -95,7 +140,29 @@ services:
       - finance
       - library
       - attendance
+      - integration-layer
 
+  # 9. Integration Layer (Router & Adapter)
+  integration-layer:
+    build:
+      context: ./integration-layer
+      dockerfile: Dockerfile
+    container_name: integration-layer
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+    networks:
+      - campus-network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+# Bagian Networks Utama
 networks:
   campus-network:
     driver: bridge
+
+# Bagian Volumes Utama (Penyimpanan Permanen)
+volumes:
+  rabbitmq_data:
+  mysql_data:
+  postgres_data:
