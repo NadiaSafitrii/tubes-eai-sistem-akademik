@@ -135,8 +135,39 @@ body {
 
 /* HEALTH BAR ON HEADER */
 .health-summary {
-    display: flex;
+    display: none;
     gap: 16px;
+}
+
+.health-summary.visible {
+    display: flex;
+}
+
+.btn-toggle-health {
+    background-color: transparent;
+    border: 1.5px solid var(--border-color);
+    color: var(--text-medium);
+    width: 34px;
+    height: 34px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: var(--transition);
+    flex-shrink: 0;
+}
+
+.btn-toggle-health:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background-color: var(--primary-light);
+}
+
+.btn-toggle-health.active {
+    background-color: var(--primary);
+    color: white;
+    border-color: var(--primary);
 }
 
 .health-dot-wrapper {

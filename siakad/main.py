@@ -1,6 +1,7 @@
 # SIAKAD Main Application
 import os
 import json
+import logging
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 
@@ -9,25 +10,76 @@ from fastapi import FastAPI, Depends, HTTPException, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
-from database import engine, Base, get_db
+from database import engine, Base, get_db, SessionLocal
 import models
 
 # Automatically create database tables if they do not exist
 Base.metadata.create_all(bind=engine)
 
+async def consume_student_active(connection: aio_pika.RobustConnection):
+    try:
+        channel = await connection.channel()
+        queue = await channel.declare_queue("siakad.student.active", durable=True)
+        
+        async with queue.iterator() as queue_iter:
+            async for message in queue_iter:
+                async with message.process():
+                    try:
+                        event_data = json.loads(message.body.decode())
+                        print(f"[SIAKAD Consumer] Received student.active event: {event_data}")
+                        
+                        student_id = event_data.get("student_id") or event_data.get("payload", {}).get("student_id")
+                        
+                        db = SessionLocal()
+                        try:
+                            db_student = db.query(models.Student).filter(models.Student.student_id == student_id).first()
+                            if db_student:
+                                db_student.status = "active"
+                                db.commit()
+                                print(f"[SIAKAD Consumer] Successfully activated student {student_id} in SIAKAD database.")
+                            else:
+                                logging.warning(f"[SIAKAD Consumer] Student {student_id} not found in SIAKAD database.")
+                        finally:
+                            db.close()
+                            
+                    except Exception as ex:
+                        print(f"[SIAKAD Consumer Error] Failed to process message: {str(ex)}")
+    except Exception as e:
+        print(f"[SIAKAD Consumer Error] Connection/channel error: {str(e)}")
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Setup RabbitMQ connection details from environment variables
-    rabbitmq_host = os.getenv("RABBITMQ_HOST", "rabbitmq")
-    rabbitmq_port = int(os.getenv("RABBITMQ_PORT", "5672"))
-    rabbitmq_user = os.getenv("RABBITMQ_USER", "guest")
-    rabbitmq_password = os.getenv("RABBITMQ_PASSWORD", "guest")
+    # Setup RabbitMQ connection details
+    rabbitmq_url = getattr(app.state, "rabbitmq_url", None)
+    if not rabbitmq_url:
+        rabbitmq_host = os.getenv("RABBITMQ_HOST", "rabbitmq")
+        rabbitmq_port = int(os.getenv("RABBITMQ_PORT", "5672"))
+        rabbitmq_user = os.getenv("RABBITMQ_USER", "guest")
+        rabbitmq_password = os.getenv("RABBITMQ_PASSWORD", "guest")
+        rabbitmq_url = f"amqp://{rabbitmq_user}:{rabbitmq_password}@{rabbitmq_host}:{rabbitmq_port}/"
+        app.state.rabbitmq_url = rabbitmq_url
     
-    rabbitmq_url = f"amqp://{rabbitmq_user}:{rabbitmq_password}@{rabbitmq_host}:{rabbitmq_port}/"
-    
-    # Establish persistent dynamic async connection at startup
-    rabbitmq_connection = await aio_pika.connect_robust(rabbitmq_url)
+    # Establish persistent dynamic async connection at startup with retry logic
+    import asyncio
+    retries = 12
+    rabbitmq_connection = None
+    while retries > 0:
+        try:
+            rabbitmq_connection = await aio_pika.connect_robust(app.state.rabbitmq_url)
+            break
+        except Exception as e:
+            print(f"[SIAKAD Startup] RabbitMQ not ready ({e}). Retrying in 5 seconds...")
+            await asyncio.sleep(5)
+            retries -= 1
+            
+    if not rabbitmq_connection:
+        raise RuntimeError("Failed to connect to RabbitMQ after multiple attempts.")
+        
     app.state.rabbitmq_connection = rabbitmq_connection
+    
+    # Start RabbitMQ consumer for student.active in the background
+    asyncio.create_task(consume_student_active(rabbitmq_connection))
+    
     yield
     # Close connection on shutdown
     await rabbitmq_connection.close()
@@ -80,33 +132,68 @@ async def publish_event(queue_name: str, message_body: dict, connection: aio_pik
 
 # API Endpoints
 @app.post("/students", response_model=StudentResponse, status_code=status.HTTP_201_CREATED)
-def create_student(student: StudentCreate, db: Session = Depends(get_db)):
-    # Check if student_id already exists
-    existing_id = db.query(models.Student).filter(models.Student.student_id == student.student_id).first()
-    if existing_id:
+async def create_student(student: StudentCreate, db: Session = Depends(get_db)):
+    from anyio import to_thread
+    
+    def db_operations():
+        # Check if student_id already exists
+        existing_id = db.query(models.Student).filter(models.Student.student_id == student.student_id).first()
+        if existing_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Student with this ID already exists"
+            )
+        
+        # Check if email already exists
+        existing_email = db.query(models.Student).filter(models.Student.email == student.email).first()
+        if existing_email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Student with this email already exists"
+            )
+        
+        db_student = models.Student(
+            student_id=student.student_id,
+            name=student.name,
+            email=student.email,
+            semester=student.semester,
+            status="inactive" # default value
+        )
+        db.add(db_student)
+        db.commit()
+        db.refresh(db_student)
+        return db_student
+
+    try:
+        db_student = await to_thread.run_sync(db_operations)
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Student with this ID already exists"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Database transaction failed: {str(e)}"
         )
     
-    # Check if email already exists
-    existing_email = db.query(models.Student).filter(models.Student.email == student.email).first()
-    if existing_email:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Student with this email already exists"
-        )
+    # Construct Canonical Data Model (CDM) message
+    cdm_message = {
+        "student_id": db_student.student_id,
+        "event_type": "student.registered",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "payload": {
+            "student_id": db_student.student_id,
+            "name": db_student.name,
+            "email": db_student.email,
+            "semester": db_student.semester,
+            "status": db_student.status
+        }
+    }
     
-    db_student = models.Student(
-        student_id=student.student_id,
-        name=student.name,
-        email=student.email,
-        semester=student.semester,
-        status="inactive" # default value
-    )
-    db.add(db_student)
-    db.commit()
-    db.refresh(db_student)
+    # Get RabbitMQ connection from application state
+    rabbitmq_connection = app.state.rabbitmq_connection
+    
+    # Publish event via reusable persistent connection
+    await publish_event("student.registered", cdm_message, rabbitmq_connection)
+    
     return db_student
 
 @app.get("/students/{id}", response_model=StudentResponse)
@@ -131,8 +218,8 @@ async def register_student(id: str, db: Session = Depends(get_db)):
                 detail=f"Student with ID {id} not found"
             )
         
-        # Update student status to active
-        db_student.status = "active"
+        # Set status to inactive. It will become active automatically when SPP is paid.
+        db_student.status = "inactive"
         db.commit()
         db.refresh(db_student)
         return db_student

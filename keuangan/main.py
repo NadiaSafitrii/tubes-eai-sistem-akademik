@@ -10,11 +10,58 @@ from fastapi import FastAPI, Depends, HTTPException, status, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from database import engine, Base, get_db
+from database import engine, Base, get_db, SessionLocal
 import models
 
 # Automatically create database tables if they do not exist
 Base.metadata.create_all(bind=engine)
+
+async def consume_student_registered(connection: aio_pika.RobustConnection):
+    try:
+        # Open channel
+        channel = await connection.channel()
+        # Declare queue (matching durability)
+        queue = await channel.declare_queue("student.registered", durable=True)
+        
+        async with queue.iterator() as queue_iter:
+            async for message in queue_iter:
+                async with message.process():
+                    try:
+                        event_data = json.loads(message.body.decode())
+                        print(f"[Keuangan Consumer] Received student.registered event: {event_data}")
+                        
+                        student_id = event_data.get("student_id")
+                        payload = event_data.get("payload", {})
+                        semester = payload.get("semester", 1)
+                        
+                        # Generate unique bill ID, e.g. BILL-<student_id>-<semester>
+                        bill_id = f"BILL-{student_id}-{semester}"
+                        
+                        # Open DB Session
+                        db = SessionLocal()
+                        try:
+                            # Check if bill already exists
+                            existing_bill = db.query(models.Bill).filter(models.Bill.bill_id == bill_id).first()
+                            if not existing_bill:
+                                db_bill = models.Bill(
+                                    bill_id=bill_id,
+                                    student_id=student_id,
+                                    amount=5000000.0, # default amount: 5 million IDR
+                                    semester=semester,
+                                    status="unpaid"
+                                )
+                                db.add(db_bill)
+                                db.commit()
+                                print(f"[Keuangan Consumer] Automatically created bill {bill_id} for student {student_id}")
+                            else:
+                                print(f"[Keuangan Consumer] Bill {bill_id} already exists for student {student_id}")
+                        finally:
+                            db.close()
+                            
+                    except Exception as ex:
+                        print(f"[Keuangan Consumer Error] Failed to process message: {str(ex)}")
+    except Exception as e:
+        print(f"[Keuangan Consumer Error] Connection/channel error: {str(e)}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -26,9 +73,27 @@ async def lifespan(app: FastAPI):
     
     rabbitmq_url = f"amqp://{rabbitmq_user}:{rabbitmq_password}@{rabbitmq_host}:{rabbitmq_port}/"
     
-    # Establish persistent dynamic async connection at startup
-    rabbitmq_connection = await aio_pika.connect_robust(rabbitmq_url)
+    # Establish persistent dynamic async connection at startup with retry logic
+    import asyncio
+    retries = 12
+    rabbitmq_connection = None
+    while retries > 0:
+        try:
+            rabbitmq_connection = await aio_pika.connect_robust(rabbitmq_url)
+            break
+        except Exception as e:
+            print(f"[Keuangan Startup] RabbitMQ not ready ({e}). Retrying in 5 seconds...")
+            await asyncio.sleep(5)
+            retries -= 1
+            
+    if not rabbitmq_connection:
+        raise RuntimeError("Failed to connect to RabbitMQ after multiple attempts.")
+        
     app.state.rabbitmq_connection = rabbitmq_connection
+    
+    # Start RabbitMQ consumer for student.registered in the background
+    asyncio.create_task(consume_student_registered(rabbitmq_connection))
+    
     yield
     # Close connection on shutdown
     await rabbitmq_connection.close()
@@ -135,6 +200,13 @@ def list_bills(db: Session = Depends(get_db)):
             "Content-Disposition": "attachment; filename=bills.csv"
         }
     )
+
+@app.get("/bills-json", response_model=list[BillResponse])
+def list_bills_json(db: Session = Depends(get_db)):
+    """
+    Retrieve all tuition bills in JSON format.
+    """
+    return db.query(models.Bill).all()
 
 @app.post("/bills/{id}/pay")
 async def pay_bill(id: str, db: Session = Depends(get_db)):

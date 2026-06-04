@@ -36,6 +36,7 @@ document.addEventListener("DOMContentLoaded", () => {
     initNavigation();
     initForms();
     initRefreshes();
+    initHealthToggler();
     
     // Start periodic health check and stats loading
     runHealthCheck();
@@ -83,6 +84,26 @@ function initNavigation() {
             document.getElementById(`${subTabId}-view`).classList.add("active");
         });
     });
+}
+
+// HEALTH TOGGLER LOGIC
+function initHealthToggler() {
+    const toggleBtn = document.getElementById("toggle-health-btn");
+    const healthSummary = document.querySelector(".health-summary");
+    
+    if (toggleBtn && healthSummary) {
+        toggleBtn.addEventListener("click", (e) => {
+            e.preventDefault();
+            const isVisible = healthSummary.classList.toggle("visible");
+            toggleBtn.classList.toggle("active", isVisible);
+            
+            if (isVisible) {
+                toggleBtn.setAttribute("title", "Sembunyikan Status Layanan");
+            } else {
+                toggleBtn.setAttribute("title", "Tampilkan Status Layanan");
+            }
+        });
+    }
 }
 
 // ALERT DISPLAY SYSTEM

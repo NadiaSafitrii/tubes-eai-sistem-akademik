@@ -64,7 +64,7 @@ def publish_student_active(student_id: str):
             pika.ConnectionParameters(host=RABBITMQ_HOST, port=RABBITMQ_PORT)
         )
         channel = connection.channel()
-        channel.queue_declare(queue="student.active", durable=True)
+        channel.queue_declare(queue="incoming_events", durable=True)
         
         event = {
             "student_id": student_id,
@@ -77,7 +77,7 @@ def publish_student_active(student_id: str):
         
         channel.basic_publish(
             exchange="",
-            routing_key="student.active",
+            routing_key="incoming_events",
             body=json.dumps(event),
             properties=pika.BasicProperties(
                 delivery_mode=2  # Make message persistent

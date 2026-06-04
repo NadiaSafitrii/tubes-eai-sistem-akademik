@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sistem Informasi Akademik Terintegrasi (EAI)</title>
+    <title>Portal Akademik Terintegrasi</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="style.css?v=1.1">
 </head>
 <body>
     <div class="app-wrapper">
@@ -31,6 +31,10 @@
                     <a href="#" class="nav-item" data-tab="library">Perpustakaan</a>
                     <a href="#" class="nav-item" data-tab="attendance">Presensi</a>
                 </nav>
+                
+                <button id="toggle-health-btn" class="btn-toggle-health" title="Tampilkan Status Layanan">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+                </button>
 
                 <div class="health-summary">
                     <div class="health-dot-wrapper" id="health-siakad" title="SIAKAD">
@@ -64,8 +68,8 @@
             <!-- TAB 1: DASHBOARD & PIPELINE -->
             <section class="tab-pane active" id="tab-dashboard">
                 <div class="banner-card">
-                    <h2>Simulasi Integrasi Layanan Akademik</h2>
-                    <p>Demo implementasi Enterprise Application Integration (EAI) untuk sinkronisasi data mahasiswa menggunakan RabbitMQ sebagai Message Broker.</p>
+                    <h2>Layanan Akademik Terpadu</h2>
+                    <p>Platform terintegrasi untuk pengelolaan data akademik, keuangan, perpustakaan, dan kehadiran mahasiswa secara terpusat dan real-time.</p>
                 </div>
 
                 <!-- Simple Flow Diagram Visualizer -->
@@ -108,7 +112,7 @@
                     </div>
                     
                     <div class="details-box" id="stepper-details-panel">
-                        Pilih mahasiswa dari opsi di atas untuk mensimulasikan dan melacak alur pertukaran pesan secara real-time.
+                        Pilih mahasiswa dari opsi di atas untuk melacak alur pertukaran data antar layanan secara real-time.
                     </div>
                 </div>
 
@@ -407,11 +411,11 @@
         
         <footer class="footer">
             <div class="footer-container">
-                <p>&copy; 2026 Tugas Akhir EAI Kelompok. Program Studi Teknik Informatika, Telkom University.</p>
+                <p>&copy; 2026 Tugas Besar EAI Kelompok 5. Program Studi Sistem Informasi, Telkom University.</p>
             </div>
         </footer>
     </div>
     
-    <script src="app.js"></script>
+    <script src="app.js?v=1.1"></script>
 </body>
 </html>

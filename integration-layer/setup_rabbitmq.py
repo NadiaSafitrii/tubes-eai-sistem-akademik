@@ -12,7 +12,9 @@ def setup_queues():
         "student.registered",
         "spp.created",
         "spp.paid",
+        "siakad.spp.paid",
         "student.active",
+        "siakad.student.active",
         "dead.letter"
     ]
 

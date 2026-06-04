@@ -12,25 +12,26 @@ def route_message(ch, method, properties, body):
         
         # Logika Content-Based Router
         if event_type == "student.registered":
-            target_queue = "student.registered"
+            target_queues = ["student.registered"]
         elif event_type == "spp.created":
-            target_queue = "spp.created"
+            target_queues = ["spp.created"]
         elif event_type == "spp.paid":
-            target_queue = "spp.paid"
+            target_queues = ["spp.paid", "siakad.spp.paid"]
         elif event_type == "student.active":
-            target_queue = "student.active"
+            target_queues = ["student.active", "siakad.student.active"]
         else:
-            target_queue = "dead.letter" # Event tidak dikenali
+            target_queues = ["dead.letter"] # Event tidak dikenali
 
-        print(f"[Router] Merutekan event '{event_type}' ke antrean '{target_queue}'")
+        print(f"[Router] Merutekan event '{event_type}' ke antrean {target_queues}")
 
-        # Teruskan pesan ke antrean target
-        ch.basic_publish(
-            exchange='',
-            routing_key=target_queue,
-            body=body,
-            properties=pika.BasicProperties(delivery_mode=2) # Persistent
-        )
+        # Teruskan pesan ke seluruh antrean target
+        for target_queue in target_queues:
+            ch.basic_publish(
+                exchange='',
+                routing_key=target_queue,
+                body=body,
+                properties=pika.BasicProperties(delivery_mode=2) # Persistent
+            )
         ch.basic_ack(delivery_tag=method.delivery_tag)
         
     except Exception as e:
