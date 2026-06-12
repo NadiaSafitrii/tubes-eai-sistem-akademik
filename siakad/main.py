@@ -80,6 +80,26 @@ async def lifespan(app: FastAPI):
     # Start RabbitMQ consumer for student.active in the background
     asyncio.create_task(consume_student_active(rabbitmq_connection))
     
+    # Seed default classes
+    db = SessionLocal()
+    try:
+        default_classes = [
+            {"class_id": "EAI-A", "name": "Enterprise Application Integration"},
+            {"class_id": "BPM-A", "name": "Business Process Management"},
+            {"class_id": "IF-44-01", "name": "Informatika 44-01"}
+        ]
+        for c in default_classes:
+            existing = db.query(models.Class).filter(models.Class.class_id == c["class_id"]).first()
+            if not existing:
+                db_class = models.Class(class_id=c["class_id"], name=c["name"])
+                db.add(db_class)
+        db.commit()
+        print("[SIAKAD Startup] Seeded default classes successfully.")
+    except Exception as e:
+        print(f"[SIAKAD Startup] Failed to seed default classes: {e}")
+    finally:
+        db.close()
+
     yield
     # Close connection on shutdown
     await rabbitmq_connection.close()
@@ -98,16 +118,26 @@ class StudentCreate(BaseModel):
     email: EmailStr
     semester: int
 
+class ClassInfo(BaseModel):
+    id: str
+    name: str
+
 class StudentResponse(BaseModel):
     student_id: str
     name: str
     email: str
     semester: int
     status: str
+    classes: list[ClassInfo] = []
 
     model_config = {
         "from_attributes": True
     }
+
+class EnrollRequest(BaseModel):
+    class_id: str = None
+    class_ids: list[str] = None
+
 
 # RabbitMQ Helper
 async def publish_event(queue_name: str, message_body: dict, connection: aio_pika.RobustConnection):
@@ -129,6 +159,16 @@ async def publish_event(queue_name: str, message_body: dict, connection: aio_pik
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to publish event to message broker: {str(e)}"
         )
+
+# Helper to get enrolled classes
+def get_enrolled_classes(student_id: str, db: Session) -> list:
+    enrollments = db.query(models.Enrollment).filter(models.Enrollment.student_id == student_id).all()
+    classes_info = []
+    for e in enrollments:
+        cls = db.query(models.Class).filter(models.Class.class_id == e.class_id).first()
+        if cls:
+            classes_info.append({"id": cls.class_id, "name": cls.name})
+    return classes_info
 
 # API Endpoints
 @app.post("/students", response_model=StudentResponse, status_code=status.HTTP_201_CREATED)
@@ -174,6 +214,8 @@ async def create_student(student: StudentCreate, db: Session = Depends(get_db)):
             detail=f"Database transaction failed: {str(e)}"
         )
     
+    classes_info = get_enrolled_classes(db_student.student_id, db)
+    
     # Construct Canonical Data Model (CDM) message
     cdm_message = {
         "student_id": db_student.student_id,
@@ -184,7 +226,8 @@ async def create_student(student: StudentCreate, db: Session = Depends(get_db)):
             "name": db_student.name,
             "email": db_student.email,
             "semester": db_student.semester,
-            "status": db_student.status
+            "status": db_student.status,
+            "classes": classes_info
         }
     }
     
@@ -194,6 +237,7 @@ async def create_student(student: StudentCreate, db: Session = Depends(get_db)):
     # Publish event via reusable persistent connection
     await publish_event("student.registered", cdm_message, rabbitmq_connection)
     
+    db_student.classes = classes_info
     return db_student
 
 @app.get("/students/{id}", response_model=StudentResponse)
@@ -204,6 +248,7 @@ def get_student(id: str, db: Session = Depends(get_db)):
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Student with ID {id} not found"
         )
+    db_student.classes = get_enrolled_classes(db_student.student_id, db)
     return db_student
 
 @app.post("/students/{id}/register")
@@ -218,15 +263,36 @@ async def register_student(id: str, db: Session = Depends(get_db)):
                 detail=f"Student with ID {id} not found"
             )
         
-        # Set status to inactive. It will become active automatically when SPP is paid.
-        db_student.status = "inactive"
+        # Check if they have already paid SPP in Keuangan
+        is_paid = False
+        try:
+            import urllib.request
+            import json
+            finance_url = "http://finance:8002/bills-json"
+            req = urllib.request.Request(finance_url)
+            with urllib.request.urlopen(req, timeout=3) as response:
+                bills = json.loads(response.read().decode())
+                for bill in bills:
+                    if str(bill.get("student_id")) == str(id) and bill.get("semester") == db_student.semester:
+                        if bill.get("status") == "paid":
+                            is_paid = True
+                            break
+        except Exception as e:
+            print(f"[SIAKAD Register] Failed to check bill status from Finance: {e}")
+
+        # Set status based on payment check
+        if is_paid:
+            db_student.status = "active"
+        else:
+            db_student.status = "inactive"
+            
         db.commit()
         db.refresh(db_student)
-        return db_student
+        return db_student, is_paid
 
     try:
         # Offload blocking database transaction to a thread worker
-        db_student = await to_thread.run_sync(get_and_update_student)
+        db_student, is_paid = await to_thread.run_sync(get_and_update_student)
     except HTTPException:
         raise
     except Exception as e:
@@ -235,17 +301,25 @@ async def register_student(id: str, db: Session = Depends(get_db)):
             detail=f"Database transaction failed: {str(e)}"
         )
     
+    classes_info = get_enrolled_classes(db_student.student_id, db)
+    
+    # If the student is active, publish student.active event instead of student.registered to sync enrollment immediately
+    event_type = "student.active" if is_paid else "student.registered"
+    routing_key = "incoming_events" if is_paid else "student.registered"
+    
     # Construct Canonical Data Model (CDM) message
     cdm_message = {
         "student_id": db_student.student_id,
-        "event_type": "student.registered",
+        "event_type": event_type,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "payload": {
             "student_id": db_student.student_id,
             "name": db_student.name,
             "email": db_student.email,
             "semester": db_student.semester,
-            "status": db_student.status
+            "status": db_student.status,
+            "classes": classes_info,
+            "activated_at": datetime.now(timezone.utc).isoformat() if is_paid else None
         }
     }
     
@@ -253,11 +327,11 @@ async def register_student(id: str, db: Session = Depends(get_db)):
     rabbitmq_connection = app.state.rabbitmq_connection
     
     # Publish event via reusable persistent connection
-    await publish_event("student.registered", cdm_message, rabbitmq_connection)
+    await publish_event(routing_key, cdm_message, rabbitmq_connection)
     
     return {
         "status": "success",
-        "message": "Student successfully registered and event published to RabbitMQ",
+        "message": f"Student successfully registered (status: {db_student.status}) and event published to RabbitMQ",
         "data": {
             "student_id": db_student.student_id,
             "status": db_student.status
@@ -269,7 +343,89 @@ def list_students(db: Session = Depends(get_db)):
     """
     Retrieve all students registered in SIAKAD database.
     """
-    return db.query(models.Student).all()
+    students = db.query(models.Student).all()
+    for s in students:
+        s.classes = get_enrolled_classes(s.student_id, db)
+    return students
+
+@app.post("/students/{student_id}/enroll")
+async def enroll_student(student_id: str, request: EnrollRequest, db: Session = Depends(get_db)):
+    student = db.query(models.Student).filter(models.Student.student_id == student_id).first()
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Student with ID {student_id} not found"
+        )
+    
+    class_ids = request.class_ids or []
+    if request.class_id:
+        class_ids.append(request.class_id)
+        
+    # Clear existing enrollments to allow complete updates
+    db.query(models.Enrollment).filter(models.Enrollment.student_id == student_id).delete()
+    
+    for cid in class_ids:
+        # Check if class exists, if not seed it or error
+        cls = db.query(models.Class).filter(models.Class.class_id == cid).first()
+        if not cls:
+            # Seed automatically to avoid strict erroring
+            cls = models.Class(class_id=cid, name=cid)
+            db.add(cls)
+            db.commit()
+            
+        enrollment = models.Enrollment(student_id=student_id, class_id=cid)
+        db.add(enrollment)
+        
+    db.commit()
+    
+    # Check if student is active OR check if they have paid in Keuangan to self-heal their active status
+    is_active = (student.status == "active")
+    if not is_active:
+        try:
+            import urllib.request
+            import json
+            finance_url = "http://finance:8002/bills-json"
+            req = urllib.request.Request(finance_url)
+            with urllib.request.urlopen(req, timeout=3) as response:
+                bills = json.loads(response.read().decode())
+                for bill in bills:
+                    if str(bill.get("student_id")) == str(student_id) and bill.get("semester") == student.semester:
+                        if bill.get("status") == "paid":
+                            is_active = True
+                            student.status = "active"
+                            db.commit()
+                            print(f"[SIAKAD Enroll] Self-healed student {student_id} status to active based on paid bill.")
+                            break
+        except Exception as e:
+            print(f"[SIAKAD Enroll] Failed to check bill status from Finance: {e}")
+            
+    # If student is active (or newly activated), publish student.active event to sync enrollment immediately
+    if is_active:
+        classes_info = get_enrolled_classes(student_id, db)
+        cdm_message = {
+            "student_id": student_id,
+            "event_type": "student.active",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "payload": {
+                "student_id": student_id,
+                "name": student.name,
+                "status": "active",
+                "classes": classes_info,
+                "activated_at": datetime.now(timezone.utc).isoformat()
+            }
+        }
+        rabbitmq_connection = app.state.rabbitmq_connection
+        try:
+            await publish_event("incoming_events", cdm_message, rabbitmq_connection)
+            print(f"[SIAKAD] Student {student_id} is active. Published student.active event to sync enrollment.")
+        except Exception as e:
+            print(f"[SIAKAD Error] Failed to publish sync event: {e}")
+            
+    return {"status": "success", "message": f"Student {student_id} successfully enrolled in classes."}
+
+@app.get("/classes")
+def list_classes(db: Session = Depends(get_db)):
+    return db.query(models.Class).all()
 
 @app.get("/status")
 def get_status():

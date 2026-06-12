@@ -141,6 +141,7 @@ services:
       - library
       - attendance
       - integration-layer
+      - frontend
 
   # 9. Integration Layer (Router & Adapter)
   integration-layer:
@@ -163,6 +164,11 @@ services:
     container_name: frontend
     ports:
       - "0:80"
+    depends_on:
+      - siakad
+      - finance
+      - library
+      - attendance
     networks:
       - campus-network
 

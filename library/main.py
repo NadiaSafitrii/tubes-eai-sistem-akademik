@@ -58,8 +58,28 @@ def connect_rabbitmq():
             retries -= 1
     raise Exception("Could not connect to RabbitMQ after multiple attempts.")
 
+def get_student_info_from_siakad(student_id: str) -> dict:
+    import urllib.request
+    import urllib.error
+    import json
+    
+    url = f"http://siakad:8001/students/{student_id}"
+    try:
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=5) as response:
+            if response.status == 200:
+                return json.loads(response.read().decode())
+    except Exception as e:
+        print(f"[Library] Error fetching student info from SIAKAD: {e}")
+    return {}
+
 def publish_student_active(student_id: str):
     try:
+        # Fetch name and classes from SIAKAD
+        student_info = get_student_info_from_siakad(student_id)
+        name = student_info.get("name", "Unknown Student")
+        classes = student_info.get("classes", [])
+        
         connection = pika.BlockingConnection(
             pika.ConnectionParameters(host=RABBITMQ_HOST, port=RABBITMQ_PORT)
         )
@@ -71,6 +91,10 @@ def publish_student_active(student_id: str):
             "event_type": "student.active",
             "timestamp": datetime.utcnow().isoformat() + "Z",
             "payload": {
+                "student_id": student_id,
+                "name": name,
+                "status": "active",
+                "classes": classes,
                 "activated_at": datetime.utcnow().isoformat() + "Z"
             }
         }
@@ -84,9 +108,10 @@ def publish_student_active(student_id: str):
             )
         )
         connection.close()
-        print(f"[Library] Successfully published event 'student.active' for student: {student_id}")
+        print(f"[Library] Successfully published event 'student.active' for student: {student_id} with classes: {classes}")
     except Exception as e:
         print(f"[Library] Error publishing student.active event: {e}")
+
 
 def start_rabbitmq_consumer():
     try:

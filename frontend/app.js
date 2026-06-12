@@ -3,7 +3,9 @@ const API_URLS = {
     siakad: {
         status: '/siakad/status',
         students: '/siakad/students',
-        register: (id) => `/siakad/students/${id}/register`
+        register: (id) => `/siakad/students/${id}/register`,
+        classes: '/siakad/classes',
+        enroll: (id) => `/siakad/students/${id}/enroll`
     },
     keuangan: {
         status: '/finance/status',
@@ -20,7 +22,9 @@ const API_URLS = {
     attendance: {
         status: '/attendance/', // Root health check
         record: '/attendance/record',
-        recap: (id) => `/attendance/recap/${id}`
+        recap: (id) => `/attendance/recap/${id}`,
+        classes: '/attendance/classes',
+        classStudents: (classId) => `/attendance/classes/${classId}/students`
     }
 };
 
@@ -30,6 +34,7 @@ let billsList = [];
 let selectedStudentId = "";
 let healthInterval = null;
 let dataInterval = null;
+let classAttendanceHistory = [];
 
 // DOM ELEMS & EVENT LISTENERS
 document.addEventListener("DOMContentLoaded", () => {
@@ -65,8 +70,18 @@ function initNavigation() {
             document.getElementById(`tab-${tabId}`).classList.add("active");
             
             // Trigger specific load for tabs
-            if (tabId === 'siakad') loadStudents();
+            if (tabId === 'siakad') {
+                loadStudents();
+                loadEnrollmentPanel();
+            }
             if (tabId === 'keuangan') loadBills();
+            if (tabId === 'attendance') {
+                loadAttendanceClasses();
+                const dateInput = document.getElementById("att-date-input");
+                if (dateInput && !dateInput.value) {
+                    dateInput.value = new Date().toISOString().split('T')[0];
+                }
+            }
         });
     });
     
@@ -288,42 +303,57 @@ function initForms() {
         }
     });
 
-    // Record Attendance Form (Presensi)
-    const formRecordAttendance = document.getElementById("form-record-attendance");
-    formRecordAttendance.addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const payload = {
-            student_id: document.getElementById("att-student-id").value.trim(),
-            class_id: document.getElementById("att-class-id").value.trim(),
-            status: document.getElementById("att-status").value
-        };
-        
-        try {
-            const res = await fetch(API_URLS.attendance.record, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+    // Class Enrollment Form (SIAKAD)
+    const formEnrollStudent = document.getElementById("form-enroll-student");
+    if (formEnrollStudent) {
+        formEnrollStudent.addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const studentId = document.getElementById("enroll-student-select").value;
+            const checkedCbs = document.querySelectorAll(".enroll-class-cb:checked");
+            const classIds = Array.from(checkedCbs).map(cb => cb.value);
             
-            const xmlText = await res.text();
-            
-            // Parse XML response
-            const parser = new DOMParser();
-            const xmlDoc = parser.parseFromString(xmlText, "text/xml");
-            const status = xmlDoc.getElementsByTagName("status")[0]?.textContent;
-            const message = xmlDoc.getElementsByTagName("message")[0]?.textContent;
-            
-            if (status === 'success') {
-                showAlert(`Presensi berhasil dicatat!`);
-                formRecordAttendance.reset();
-                loadAttendance(payload.student_id);
-            } else {
-                showAlert(`Gagal: ${message || 'Akses ditolak.'}`, 'error');
+            if (!studentId) {
+                showAlert("Silakan pilih mahasiswa terlebih dahulu", "error");
+                return;
             }
-        } catch (e) {
-            showAlert(`Koneksi Gagal: ${e.message}`, 'error');
-        }
-    });
+            
+            try {
+                const res = await fetch(API_URLS.siakad.enroll(studentId), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ class_ids: classIds })
+                });
+                
+                if (res.ok) {
+                    showAlert("Kelas mahasiswa berhasil didaftarkan di SIAKAD!");
+                    formEnrollStudent.reset();
+                    loadStudents();
+                    loadEnrollmentPanel();
+                } else {
+                    const err = await res.json();
+                    showAlert(`Gagal: ${err.detail || 'Terjadi kesalahan'}`, 'error');
+                }
+            } catch (e) {
+                showAlert(`Koneksi Gagal: ${e.message}`, 'error');
+            }
+        });
+    }
+
+    // Classroom Attendance Listeners
+    const classSelect = document.getElementById("att-class-select");
+    if (classSelect) {
+        classSelect.addEventListener("change", loadClassroomStudents);
+    }
+
+    const saveAttendanceBtn = document.getElementById("btn-save-classroom-attendance");
+    if (saveAttendanceBtn) {
+        saveAttendanceBtn.addEventListener("click", saveClassroomAttendance);
+    }
+
+    const historySearch = document.getElementById("att-history-search");
+    if (historySearch) {
+        historySearch.addEventListener("input", filterClassAttendanceHistory);
+    }
 
     // Access Check Form (Library check status)
     document.getElementById("btn-check-lib").addEventListener("click", checkLibraryAccess);
@@ -340,11 +370,14 @@ function initRefreshes() {
         else showAlert("Silakan isi NIM mahasiswa terlebih dahulu", "error");
     });
     
-    document.getElementById("btn-refresh-attendance").addEventListener("click", () => {
-        const nim = document.getElementById("att-search-nim").value.trim();
-        if (nim) loadAttendance(nim);
-        else showAlert("Silakan isi NIM mahasiswa terlebih dahulu", "error");
-    });
+    const btnRefreshAttendance = document.getElementById("btn-refresh-attendance");
+    if (btnRefreshAttendance) {
+        btnRefreshAttendance.addEventListener("click", () => {
+            const nim = document.getElementById("att-search-nim").value.trim();
+            if (nim) loadAttendance(nim);
+            else showAlert("Silakan isi NIM mahasiswa terlebih dahulu", "error");
+        });
+    }
 
     // Tracker select student dropdown
     document.getElementById("active-student-select").addEventListener("change", (e) => {
@@ -401,7 +434,7 @@ function syncStudentSelector() {
 // 1. SIAKAD Load
 async function loadStudents() {
     const tbody = document.querySelector("#table-students tbody");
-    tbody.innerHTML = `<tr><td colspan="6" class="text-center">Memuat data mahasiswa...</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center">Memuat data mahasiswa...</td></tr>`;
     
     try {
         const res = await fetch(API_URLS.siakad.students);
@@ -411,19 +444,21 @@ async function loadStudents() {
         tbody.innerHTML = "";
         
         if (studentsList.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="6" class="text-center">Belum ada mahasiswa terdaftar.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center">Belum ada mahasiswa terdaftar.</td></tr>`;
             return;
         }
         
         studentsList.forEach(s => {
             const tr = document.createElement("tr");
             const statusBadgeClass = s.status === 'active' ? 'badge-success' : 'badge-danger';
+            const enrolledClasses = s.classes && s.classes.length > 0 ? s.classes.map(c => c.id).join(', ') : '-';
             
             tr.innerHTML = `
                 <td><strong>${s.student_id}</strong></td>
                 <td>${s.name}</td>
                 <td>${s.email}</td>
                 <td>${s.semester}</td>
+                <td><span style="font-size: 11px; font-weight: 600;">${enrolledClasses}</span></td>
                 <td><span class="badge ${statusBadgeClass}">${s.status}</span></td>
                 <td>
                     ${s.status === 'inactive' ? 
@@ -596,15 +631,15 @@ async function loadLoans(nim) {
 }
 
 // 4. ATTENDANCE Record & Recap Load
-async function loadAttendance(nim) {
+async function loadAttendanceLogs(url, emptyMessage) {
     const tbody = document.querySelector("#table-attendance tbody");
     const rawPre = document.getElementById("raw-xml-content");
     
-    tbody.innerHTML = `<tr><td colspan="4" class="text-center">Memuat rekap presensi...</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" class="text-center">Memuat rekap presensi...</td></tr>`;
     rawPre.innerText = "Mengambil data XML...";
     
     try {
-        const res = await fetch(API_URLS.attendance.recap(nim));
+        const res = await fetch(url);
         if (!res.ok) throw new Error("Gagal mengambil data");
         
         const xmlText = await res.text();
@@ -618,38 +653,54 @@ async function loadAttendance(nim) {
         tbody.innerHTML = "";
         
         if (logs.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="4" class="text-center">Belum ada catatan presensi mahasiswa ini.</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="5" class="text-center">${emptyMessage}</td></tr>`;
             return;
         }
         
         for (let i = 0; i < logs.length; i++) {
             const log = logs[i];
             const logId = log.getElementsByTagName("id")[0]?.textContent;
+            const studentId = log.getElementsByTagName("student_id")[0]?.textContent || "";
+            const studentName = log.getElementsByTagName("student_name")[0]?.textContent || "";
             const classId = log.getElementsByTagName("class_id")[0]?.textContent;
-            const status = log.getElementsByTagName("status")[0]?.textContent;
+            const status = log.getElementsByTagName("status")[0]?.textContent || "";
             const recordedAt = log.getElementsByTagName("recorded_at")[0]?.textContent;
             
             const tr = document.createElement("tr");
             const statusBadgeClass = getAttendanceBadgeClass(status);
+            const statusLabel = getIndonesianStatusLabel(status);
+            
+            const studentDisplay = studentName ? `<strong>${studentName}</strong> <span class="text-muted" style="font-size: 11px;">(${studentId})</span>` : `<strong>${studentId}</strong>`;
             
             tr.innerHTML = `
                 <td><strong>#${logId}</strong></td>
+                <td>${studentDisplay}</td>
                 <td>${classId}</td>
-                <td><span class="badge ${statusBadgeClass}">${status}</span></td>
+                <td><span class="badge ${statusBadgeClass}">${statusLabel}</span></td>
                 <td>${new Date(recordedAt).toLocaleString('id-ID')}</td>
             `;
             tbody.appendChild(tr);
         }
     } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger">Gagal mengambil data presensi (XML).</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">Gagal mengambil data presensi (XML).</td></tr>`;
         rawPre.innerText = `Terjadi kesalahan saat memproses data: ${e.message}`;
     }
 }
 
+async function loadAttendance(nim) {
+    await loadAttendanceLogs(API_URLS.attendance.recap(nim), "Belum ada catatan presensi mahasiswa ini.");
+}
+
+async function loadClassAttendance(classId) {
+    await loadAttendanceLogs(`/attendance/recap/class/${classId}`, "Belum ada catatan presensi untuk kelas ini.");
+}
+
 function getAttendanceBadgeClass(status) {
-    switch (status) {
+    if (!status) return 'badge-primary';
+    switch (status.toLowerCase()) {
         case 'present': return 'badge-success';
-        case 'permit': return 'badge-info';
+        case 'permit':
+        case 'excused': return 'badge-info';
         case 'sick': return 'badge-warning';
         case 'absent': return 'badge-danger';
         default: return 'badge-primary';
@@ -820,5 +871,383 @@ async function updateStepperVisualization() {
         
     } catch (e) {
         detailsPanel.innerHTML = `<strong>Gagal mengambil detail visualisasi:</strong> ${e.message}`;
+    }
+}
+
+// NEW HELPERS FOR CLASS-BASED SYSTEM
+
+async function loadEnrollmentPanel() {
+    const studentSelect = document.getElementById("enroll-student-select");
+    const checkboxesDiv = document.getElementById("enroll-classes-checkboxes");
+    if (!studentSelect || !checkboxesDiv) return;
+    
+    // Populate student selector
+    studentSelect.innerHTML = '<option value="">-- Pilih Mahasiswa --</option>';
+    studentsList.forEach(s => {
+        const option = document.createElement("option");
+        option.value = s.student_id;
+        option.text = `${s.student_id} - ${s.name}`;
+        studentSelect.appendChild(option);
+    });
+    
+    // Fetch classes
+    try {
+        const res = await fetch(API_URLS.siakad.classes);
+        if (res.ok) {
+            const classes = await res.json();
+            checkboxesDiv.innerHTML = "";
+            classes.forEach(c => {
+                const label = document.createElement("label");
+                label.style.display = "flex";
+                label.style.alignItems = "center";
+                label.style.gap = "8px";
+                label.style.fontSize = "13px";
+                label.style.cursor = "pointer";
+                
+                const cb = document.createElement("input");
+                cb.type = "checkbox";
+                cb.value = c.class_id;
+                cb.className = "enroll-class-cb";
+                
+                label.appendChild(cb);
+                label.appendChild(document.createTextNode(`${c.class_id} - ${c.name}`));
+                checkboxesDiv.appendChild(label);
+            });
+        }
+    } catch (e) {
+        console.error("Error loading classes for enrollment panel:", e);
+    }
+}
+
+async function loadAttendanceClasses() {
+    const classSelect = document.getElementById("att-class-select");
+    if (!classSelect) return;
+    try {
+        const res = await fetch(API_URLS.attendance.classes);
+        if (res.ok) {
+            const classes = await res.json();
+            classSelect.innerHTML = '<option value="">-- Pilih Kelas --</option>';
+            classes.forEach(c => {
+                const option = document.createElement("option");
+                option.value = c.class_id;
+                option.text = `${c.class_id} - ${c.name}`;
+                classSelect.appendChild(option);
+            });
+        }
+    } catch (e) {
+        console.error("Error loading attendance classes:", e);
+    }
+}
+
+const statusTranslations = {
+    present: 'Hadir',
+    excused: 'Izin',
+    absent: 'Alpa'
+};
+
+function getIndonesianStatusLabel(status) {
+    return statusTranslations[status.toLowerCase()] || status;
+}
+
+async function loadClassroomStudents() {
+    const classId = document.getElementById("att-class-select").value;
+    const wrapper = document.getElementById("classroom-attendance-wrapper");
+    const emptyMsg = document.getElementById("classroom-empty-message");
+    const tbody = document.querySelector("#table-classroom-students tbody");
+    if (!tbody) return;
+    
+    if (!classId) {
+        if (wrapper) wrapper.style.display = "none";
+        if (emptyMsg) {
+            emptyMsg.style.display = "block";
+            emptyMsg.innerText = "Pilih kelas di atas untuk memuat daftar mahasiswa.";
+        }
+        // Clear history table
+        const histTbody = document.querySelector("#table-attendance-history tbody");
+        if (histTbody) histTbody.innerHTML = `<tr><td colspan="5" class="text-center">Pilih kelas di sebelah kiri untuk melihat riwayat.</td></tr>`;
+        const detailsBtn = document.getElementById("tab-session-details-btn");
+        if (detailsBtn) detailsBtn.style.display = "none";
+        return;
+    }
+    
+    tbody.innerHTML = '<tr><td colspan="2" class="text-center">Memuat daftar mahasiswa...</td></tr>';
+    if (wrapper) wrapper.style.display = "flex";
+    if (emptyMsg) emptyMsg.style.display = "none";
+    
+    try {
+        const res = await fetch(API_URLS.attendance.classStudents(classId));
+        if (res.ok) {
+            const students = await res.json();
+            tbody.innerHTML = "";
+            
+            if (students.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">Tidak ada mahasiswa aktif terdaftar di kelas ini.</td></tr>';
+                loadClassSessionsHistory(classId);
+                return;
+            }
+            
+            students.forEach(s => {
+                const tr = document.createElement("tr");
+                tr.innerHTML = `
+                    <td><strong>${s.name}</strong> <span class="text-muted" style="font-size: 11px;">(${s.student_id})</span></td>
+                    <td>
+                        <select class="form-control student-status-select" data-student-id="${s.student_id}">
+                            <option value="present">Hadir</option>
+                            <option value="excused">Izin</option>
+                            <option value="absent">Alpa</option>
+                        </select>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+            
+            // Auto load attendance logs history for this class
+            loadClassSessionsHistory(classId);
+        } else {
+            tbody.innerHTML = '<tr><td colspan="2" class="text-center text-danger">Gagal memuat mahasiswa.</td></tr>';
+        }
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="2" class="text-center text-danger">Koneksi gagal: ${e.message}</td></tr>`;
+    }
+}
+
+async function saveClassroomAttendance() {
+    const classId = document.getElementById("att-class-select").value;
+    const meetingNum = parseInt(document.getElementById("att-meeting-input").value);
+    const dateInput = document.getElementById("att-date-input").value;
+    const selects = document.querySelectorAll(".student-status-select");
+    
+    if (!classId) {
+        showAlert("Silakan pilih kelas terlebih dahulu", "error");
+        return;
+    }
+    if (!meetingNum) {
+        showAlert("Silakan pilih pertemuan terlebih dahulu", "error");
+        return;
+    }
+    if (!dateInput) {
+        showAlert("Silakan pilih tanggal absensi", "error");
+        return;
+    }
+    
+    const records = [];
+    selects.forEach(select => {
+        records.push({
+            student_id: select.getAttribute("data-student-id"),
+            status: select.value
+        });
+    });
+    
+    if (records.length === 0) {
+        showAlert("Tidak ada mahasiswa untuk diabsen", "error");
+        return;
+    }
+    
+    const payload = {
+        class_id: classId,
+        meeting_number: meetingNum,
+        attendance_date: dateInput,
+        records: records
+    };
+    
+    try {
+        const res = await fetch('/attendance/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        
+        if (res.ok) {
+            showAlert("Absensi kelas berhasil dicatat!");
+            
+            // Increment meeting selection automatically
+            const mtgSelect = document.getElementById("att-meeting-input");
+            if (mtgSelect && mtgSelect.selectedIndex < mtgSelect.options.length - 1) {
+                mtgSelect.selectedIndex += 1;
+            }
+            
+            loadClassroomStudents();
+        } else {
+            const err = await res.json();
+            showAlert(`Gagal: ${err.detail || 'Terjadi kesalahan'}`, 'error');
+        }
+    } catch (e) {
+        showAlert(`Koneksi Gagal: ${e.message}`, 'error');
+    }
+}
+
+async function loadClassSessionsHistory(classId) {
+    const tbody = document.querySelector("#table-attendance-history tbody");
+    const rawPre = document.getElementById("raw-xml-content");
+    const historyTitle = document.getElementById("attendance-history-title");
+    const detailsBtn = document.getElementById("tab-session-details-btn");
+    
+    if (historyTitle) historyTitle.innerText = `Riwayat Presensi - ${classId}`;
+    if (detailsBtn) detailsBtn.style.display = "none";
+    
+    // Reset search input value
+    const searchInput = document.getElementById("att-history-search");
+    if (searchInput) searchInput.value = "";
+    
+    // Switch active sub-tab back to "Riwayat"
+    const subTabBtns = document.querySelectorAll(".tab-sub-btn");
+    const subTabPanels = document.querySelectorAll(".sub-tab-panel");
+    subTabBtns.forEach(btn => {
+        btn.classList.toggle("active", btn.getAttribute("data-sub") === "history-rendered");
+    });
+    subTabPanels.forEach(p => {
+        p.classList.toggle("active", p.id === "history-rendered-view");
+    });
+    
+    tbody.innerHTML = `<tr><td colspan="5" class="text-center">Memuat riwayat...</td></tr>`;
+    rawPre.innerText = "Mengambil data XML...";
+    
+    try {
+        const res = await fetch(`/attendance/classes/${classId}/history`);
+        if (!res.ok) throw new Error("Gagal mengambil data riwayat");
+        
+        const xmlText = await res.text();
+        rawPre.innerText = formatXml(xmlText);
+        
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+        
+        const records = xmlDoc.getElementsByTagName("record");
+        classAttendanceHistory = [];
+        
+        for (let i = 0; i < records.length; i++) {
+            const rec = records[i];
+            const attDate = rec.getElementsByTagName("attendance_date")[0]?.textContent;
+            const mtgNum = rec.getElementsByTagName("meeting_number")[0]?.textContent;
+            const studentId = rec.getElementsByTagName("student_id")[0]?.textContent;
+            const studentName = rec.getElementsByTagName("student_name")[0]?.textContent;
+            const status = rec.getElementsByTagName("status")[0]?.textContent;
+            const sessionId = rec.getElementsByTagName("session_id")[0]?.textContent;
+            
+            classAttendanceHistory.push({
+                attendanceDate: attDate,
+                meetingNumber: mtgNum,
+                studentId: studentId,
+                studentName: studentName,
+                status: status,
+                sessionId: sessionId
+            });
+        }
+        
+        renderAttendanceHistory(classAttendanceHistory);
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">Gagal memuat riwayat: ${e.message}</td></tr>`;
+        rawPre.innerText = `Error: ${e.message}`;
+    }
+}
+
+function renderAttendanceHistory(records) {
+    const tbody = document.querySelector("#table-attendance-history tbody");
+    if (!tbody) return;
+    
+    tbody.innerHTML = "";
+    if (records.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center">Belum ada riwayat presensi yang cocok.</td></tr>`;
+        return;
+    }
+    
+    records.forEach(rec => {
+        const tr = document.createElement("tr");
+        tr.style.cursor = "pointer";
+        const statusBadgeClass = getAttendanceBadgeClass(rec.status);
+        const statusLabel = getIndonesianStatusLabel(rec.status);
+        
+        tr.innerHTML = `
+            <td>${rec.attendanceDate}</td>
+            <td><strong>Pertemuan ${rec.meetingNumber}</strong></td>
+            <td><code>${rec.studentId}</code></td>
+            <td>${rec.studentName}</td>
+            <td><span class="badge ${statusBadgeClass}">${statusLabel}</span></td>
+        `;
+        
+        tr.addEventListener("click", () => {
+            loadSessionDetails(rec.sessionId);
+        });
+        
+        tbody.appendChild(tr);
+    });
+}
+
+function filterClassAttendanceHistory() {
+    const query = (document.getElementById("att-history-search")?.value || "").toLowerCase().trim();
+    if (!query) {
+        renderAttendanceHistory(classAttendanceHistory);
+        return;
+    }
+    
+    const filtered = classAttendanceHistory.filter(rec => 
+        rec.studentId.toLowerCase().includes(query) || 
+        rec.studentName.toLowerCase().includes(query)
+    );
+    
+    renderAttendanceHistory(filtered);
+}
+
+async function loadSessionDetails(sessionId) {
+    const headerDiv = document.getElementById("session-details-header");
+    const tbody = document.querySelector("#table-session-details tbody");
+    const rawPre = document.getElementById("raw-xml-content");
+    const detailsBtn = document.getElementById("tab-session-details-btn");
+    
+    tbody.innerHTML = `<tr><td colspan="2" class="text-center">Memuat detail pertemuan...</td></tr>`;
+    if (detailsBtn) detailsBtn.style.display = "inline-block";
+    
+    // Switch active sub-tab to "Detail Pertemuan"
+    const subTabBtns = document.querySelectorAll(".tab-sub-btn");
+    const subTabPanels = document.querySelectorAll(".sub-tab-panel");
+    subTabBtns.forEach(btn => {
+        btn.classList.toggle("active", btn.getAttribute("data-sub") === "session-details-rendered");
+    });
+    subTabPanels.forEach(p => {
+        p.classList.toggle("active", p.id === "session-details-rendered-view");
+    });
+    
+    try {
+        const res = await fetch(`/attendance/sessions/${sessionId}`);
+        if (!res.ok) throw new Error("Gagal mengambil detail pertemuan");
+        
+        const xmlText = await res.text();
+        rawPre.innerText = formatXml(xmlText);
+        
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+        
+        const classId = xmlDoc.getElementsByTagName("class_id")[0]?.textContent;
+        const mtgNum = xmlDoc.getElementsByTagName("meeting_number")[0]?.textContent;
+        const attDate = xmlDoc.getElementsByTagName("attendance_date")[0]?.textContent;
+        
+        headerDiv.innerHTML = `
+            <strong>Kelas:</strong> ${classId}<br>
+            <strong>Pertemuan Ke:</strong> ${mtgNum}<br>
+            <strong>Tanggal:</strong> ${attDate}
+        `;
+        
+        const records = xmlDoc.getElementsByTagName("record");
+        tbody.innerHTML = "";
+        
+        for (let i = 0; i < records.length; i++) {
+            const rec = records[i];
+            const stdId = rec.getElementsByTagName("student_id")[0]?.textContent;
+            const stdName = rec.getElementsByTagName("student_name")[0]?.textContent;
+            const status = rec.getElementsByTagName("status")[0]?.textContent || "";
+            
+            const tr = document.createElement("tr");
+            const statusBadgeClass = getAttendanceBadgeClass(status);
+            const statusLabel = getIndonesianStatusLabel(status);
+            
+            tr.innerHTML = `
+                <td><strong>${stdName}</strong> <span class="text-muted" style="font-size: 11px;">(${stdId})</span></td>
+                <td><span class="badge ${statusBadgeClass}">${statusLabel}</span></td>
+            `;
+            tbody.appendChild(tr);
+        }
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="2" class="text-center text-danger">Gagal memuat detail: ${e.message}</td></tr>`;
+        rawPre.innerText = `Error: ${e.message}`;
     }
 }
