@@ -15,9 +15,7 @@
         <header class="navbar">
             <div class="nav-container">
                 <div class="nav-brand">
-                    <div class="brand-logo">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c0 2 2 3 6 3s6-1 6-3v-5"/></svg>
-                    </div>
+                    <img src="logo-telu.png" style="height: 40px; object-fit: contain;" alt="Telkom University Logo" style="height: 40px; margin-right: 12px; object-fit: contain;">
                     <div class="brand-text">
                         <span class="title">EAI Academic Portal</span>
                         <span class="sub">Telkom University</span>
@@ -25,7 +23,14 @@
                 </div>
                 
                 <nav class="nav-menu">
-                    <a href="#" class="nav-item active" data-tab="dashboard">Dashboard</a>
+                    <a href="#" class="nav-item active" data-tab="dashboard" title="Dashboard">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="7" height="9"></rect>
+                            <rect x="14" y="3" width="7" height="5"></rect>
+                            <rect x="14" y="12" width="7" height="9"></rect>
+                            <rect x="3" y="16" width="7" height="5"></rect>
+                        </svg>
+                    </a>
                     <a href="#" class="nav-item" data-tab="siakad">SIAKAD</a>
                     <a href="#" class="nav-item" data-tab="keuangan">Keuangan</a>
                     <a href="#" class="nav-item" data-tab="library">Perpustakaan</a>
@@ -360,9 +365,17 @@
 
             <!-- TAB 5: PRESENSI -->
             <section class="tab-pane" id="tab-attendance">
-                <div class="grid-form-table">
+                <!-- Main Sub-navigation for Attendance -->
+                <div class="attendance-main-nav" style="display: flex; justify-content: center; margin-bottom: 24px;">
+                    <div style="display: flex; background: #ffffff; padding: 4px; border-radius: 8px; border: 1px solid var(--border-color); box-shadow: var(--shadow);">
+                        <button class="main-att-tab-btn active" data-target="att-input-section" style="padding: 8px 24px; border: none; background: var(--primary); color: white; border-radius: 6px; font-weight: 600; cursor: pointer; transition: all 0.2s;">Input Presensi</button>
+                        <button class="main-att-tab-btn" data-target="att-history-section" style="padding: 8px 24px; border: none; background: transparent; color: var(--text-medium); border-radius: 6px; font-weight: 600; cursor: pointer; transition: all 0.2s;">Riwayat Presensi</button>
+                    </div>
+                </div>
+
+                <div class="attendance-content-wrapper" style="display: flex; flex-direction: column; gap: 24px;">
                     <!-- Presensi form (Classroom workflow) -->
-                    <div class="card">
+                    <div class="card att-main-section active" id="att-input-section">
                         <div class="card-header">
                             <h3 class="card-title">Input Absensi Kelas</h3>
                         </div>
@@ -403,8 +416,9 @@
                                 <table class="table" id="table-classroom-students">
                                     <thead>
                                         <tr>
+                                            <th>NIM</th>
                                             <th>Nama Mahasiswa</th>
-                                            <th>Status</th>
+                                            <th>Status Kehadiran</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -420,38 +434,43 @@
                     </div>
 
                     <!-- Riwayat dan Detail Presensi -->
-                    <div class="card">
+                    <div class="card att-main-section" id="att-history-section" style="display: none;">
                         <div class="card-header">
                             <h3 class="card-title" id="attendance-history-title">Riwayat Presensi Kelas</h3>
+                        </div>
+                        
+                        <div class="form-group" style="padding: 0 24px; margin-top: 10px;">
+                            <label for="att-history-class-select">Pilih Kelas untuk Melihat Riwayat</label>
+                            <select id="att-history-class-select" class="form-control">
+                                <option value="">-- Pilih Kelas --</option>
+                            </select>
                         </div>
                         
                         <div class="sub-nav-wrapper">
                             <div class="tabs-sub">
                                 <button class="tab-sub-btn active" data-sub="history-rendered">Riwayat</button>
                                 <button class="tab-sub-btn" data-sub="session-details-rendered" id="tab-session-details-btn" style="display: none;">Detail Pertemuan</button>
-                                <button class="tab-sub-btn" data-sub="xml-raw">Data XML Asli</button>
                             </div>
                         </div>
                         
                         <div class="table-responsive">
                             <!-- View 1: History of Sessions -->
                             <div id="history-rendered-view" class="sub-tab-panel active">
-                                <div style="padding: 10px; border-bottom: 1px solid rgba(0,0,0,0.08);">
-                                    <input type="text" id="att-history-search" class="form-control" placeholder="Cari berdasarkan NIM atau Nama Mahasiswa..." style="width: 100%; box-sizing: border-box;">
-                                </div>
                                 <table class="table" id="table-attendance-history">
                                     <thead>
                                         <tr>
+                                            <th>Pertemuan Ke-</th>
                                             <th>Tanggal</th>
-                                            <th>Pertemuan</th>
-                                            <th>NIM</th>
-                                            <th>Nama Mahasiswa</th>
-                                            <th>Status</th>
+                                            <th class="text-center">Total Hadir</th>
+                                            <th class="text-center">Total Izin</th>
+                                            <th class="text-center">Total Sakit</th>
+                                            <th class="text-center">Total Alpa</th>
+                                            <th class="text-center">Aksi</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <tr>
-                                            <td colspan="5" class="text-center">Pilih kelas di sebelah kiri untuk melihat riwayat.</td>
+                                            <td colspan="7" class="text-center">Pilih kelas di sebelah kiri untuk melihat rekapitulasi.</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -459,12 +478,18 @@
                             
                             <!-- View 2: Session Details -->
                             <div id="session-details-rendered-view" class="sub-tab-panel">
-                                <div id="session-details-header" style="margin: 10px; padding: 10px; background: rgba(0,0,0,0.02); border-radius: 4px; border-left: 3px solid var(--danger); font-size: 13px;">
+                                <div style="margin-bottom: 14px;">
+                                    <button id="btn-back-to-recap" class="btn btn-outline btn-sm">
+                                        &larr; Kembali ke Rekap
+                                    </button>
+                                </div>
+                                <div id="session-details-header" style="margin-bottom: 10px; padding: 10px; background: rgba(0,0,0,0.02); border-radius: 4px; border-left: 3px solid var(--danger); font-size: 13px;">
                                     <!-- Detailed header info dynamically populated -->
                                 </div>
                                 <table class="table" id="table-session-details">
                                     <thead>
                                         <tr>
+                                            <th>NIM</th>
                                             <th>Nama Mahasiswa</th>
                                             <th>Status</th>
                                         </tr>
@@ -475,10 +500,6 @@
                                 </table>
                             </div>
                             
-                            <!-- View 3: Raw XML -->
-                            <div id="xml-raw-view" class="sub-tab-panel">
-                                <pre class="raw-code" id="raw-xml-content">Belum ada respon XML yang diambil.</pre>
-                            </div>
                         </div>
                     </div>
                 </div>

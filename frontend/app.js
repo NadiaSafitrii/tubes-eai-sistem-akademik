@@ -85,6 +85,34 @@ function initNavigation() {
         });
     });
     
+    // Main Tabs for Attendance Tab
+    const mainAttTabBtns = document.querySelectorAll(".main-att-tab-btn");
+    const mainAttSections = document.querySelectorAll(".att-main-section");
+    
+    mainAttTabBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+            const targetId = btn.getAttribute("data-target");
+            
+            mainAttTabBtns.forEach(b => {
+                b.classList.remove("active");
+                b.style.background = "transparent";
+                b.style.color = "var(--text-medium)";
+            });
+            
+            btn.classList.add("active");
+            btn.style.background = "var(--primary)";
+            btn.style.color = "white";
+            
+            mainAttSections.forEach(sec => {
+                if (sec.id === targetId) {
+                    sec.style.display = "flex";
+                } else {
+                    sec.style.display = "none";
+                }
+            });
+        });
+    });
+
     // Sub tabs inside Attendance Tab
     const subTabBtns = document.querySelectorAll(".tab-sub-btn");
     const subTabPanels = document.querySelectorAll(".sub-tab-panel");
@@ -99,6 +127,13 @@ function initNavigation() {
             document.getElementById(`${subTabId}-view`).classList.add("active");
         });
     });
+    
+    const attHistoryClassSelect = document.getElementById("att-history-class-select");
+    if (attHistoryClassSelect) {
+        attHistoryClassSelect.addEventListener("change", (e) => {
+            loadClassSessionsHistory(e.target.value);
+        });
+    }
 }
 
 // HEALTH TOGGLER LOGIC
@@ -353,6 +388,11 @@ function initForms() {
     const historySearch = document.getElementById("att-history-search");
     if (historySearch) {
         historySearch.addEventListener("input", filterClassAttendanceHistory);
+    }
+
+    const historyDateFilter = document.getElementById("att-history-date-filter");
+    if (historyDateFilter) {
+        historyDateFilter.addEventListener("change", filterClassAttendanceHistory);
     }
 
     // Access Check Form (Library check status)
@@ -633,17 +673,14 @@ async function loadLoans(nim) {
 // 4. ATTENDANCE Record & Recap Load
 async function loadAttendanceLogs(url, emptyMessage) {
     const tbody = document.querySelector("#table-attendance tbody");
-    const rawPre = document.getElementById("raw-xml-content");
     
-    tbody.innerHTML = `<tr><td colspan="5" class="text-center">Memuat rekap presensi...</td></tr>`;
-    rawPre.innerText = "Mengambil data XML...";
+    if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="text-center">Memuat rekap presensi...</td></tr>`;
     
     try {
         const res = await fetch(url);
         if (!res.ok) throw new Error("Gagal mengambil data");
         
         const xmlText = await res.text();
-        rawPre.innerText = formatXml(xmlText);
         
         // Parse XML
         const parser = new DOMParser();
@@ -682,8 +719,7 @@ async function loadAttendanceLogs(url, emptyMessage) {
             tbody.appendChild(tr);
         }
     } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">Gagal mengambil data presensi (XML).</td></tr>`;
-        rawPre.innerText = `Terjadi kesalahan saat memproses data: ${e.message}`;
+        if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">Gagal mengambil data presensi (XML).</td></tr>`;
     }
 }
 
@@ -933,6 +969,17 @@ async function loadAttendanceClasses() {
                 option.text = `${c.class_id} - ${c.name}`;
                 classSelect.appendChild(option);
             });
+            
+            const historyClassSelect = document.getElementById("att-history-class-select");
+            if (historyClassSelect) {
+                historyClassSelect.innerHTML = '<option value="">-- Pilih Kelas --</option>';
+                classes.forEach(c => {
+                    const option = document.createElement("option");
+                    option.value = c.class_id;
+                    option.text = `${c.class_id} - ${c.name}`;
+                    historyClassSelect.appendChild(option);
+                });
+            }
         }
     } catch (e) {
         console.error("Error loading attendance classes:", e);
@@ -970,7 +1017,7 @@ async function loadClassroomStudents() {
         return;
     }
     
-    tbody.innerHTML = '<tr><td colspan="2" class="text-center">Memuat daftar mahasiswa...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="3" class="text-center">Memuat daftar mahasiswa...</td></tr>';
     if (wrapper) wrapper.style.display = "flex";
     if (emptyMsg) emptyMsg.style.display = "none";
     
@@ -981,33 +1028,40 @@ async function loadClassroomStudents() {
             tbody.innerHTML = "";
             
             if (students.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="2" class="text-center text-muted">Tidak ada mahasiswa aktif terdaftar di kelas ini.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted">Tidak ada mahasiswa aktif terdaftar di kelas ini.</td></tr>';
                 loadClassSessionsHistory(classId);
                 return;
             }
             
             students.forEach(s => {
                 const tr = document.createElement("tr");
+                const groupName = `status_${s.student_id}`;
                 tr.innerHTML = `
-                    <td><strong>${s.name}</strong> <span class="text-muted" style="font-size: 11px;">(${s.student_id})</span></td>
-                    <td>
-                        <select class="form-control student-status-select" data-student-id="${s.student_id}">
-                            <option value="present">Hadir</option>
-                            <option value="excused">Izin</option>
-                            <option value="absent">Alpa</option>
-                        </select>
+                    <td><code>${s.student_id}</code></td>
+                    <td><strong>${s.name}</strong></td>
+                    <td style="white-space: nowrap;">
+                        <label style="margin-right: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                            <input type="radio" name="${groupName}" value="present" class="student-status-radio" data-student-id="${s.student_id}" checked> Hadir
+                        </label>
+                        <label style="margin-right: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                            <input type="radio" name="${groupName}" value="excused" class="student-status-radio" data-student-id="${s.student_id}"> Izin
+                        </label>
+                        <label style="margin-right: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                            <input type="radio" name="${groupName}" value="sick" class="student-status-radio" data-student-id="${s.student_id}"> Sakit
+                        </label>
+                        <label style="margin-right: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px;">
+                            <input type="radio" name="${groupName}" value="absent" class="student-status-radio" data-student-id="${s.student_id}"> Alpa
+                        </label>
                     </td>
                 `;
                 tbody.appendChild(tr);
             });
             
-            // Auto load attendance logs history for this class
-            loadClassSessionsHistory(classId);
         } else {
-            tbody.innerHTML = '<tr><td colspan="2" class="text-center text-danger">Gagal memuat mahasiswa.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-danger">Gagal memuat mahasiswa.</td></tr>';
         }
     } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="2" class="text-center text-danger">Koneksi gagal: ${e.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="3" class="text-center text-danger">Koneksi gagal: ${e.message}</td></tr>`;
     }
 }
 
@@ -1015,7 +1069,7 @@ async function saveClassroomAttendance() {
     const classId = document.getElementById("att-class-select").value;
     const meetingNum = parseInt(document.getElementById("att-meeting-input").value);
     const dateInput = document.getElementById("att-date-input").value;
-    const selects = document.querySelectorAll(".student-status-select");
+    const radios = document.querySelectorAll(".student-status-radio:checked");
     
     if (!classId) {
         showAlert("Silakan pilih kelas terlebih dahulu", "error");
@@ -1031,10 +1085,10 @@ async function saveClassroomAttendance() {
     }
     
     const records = [];
-    selects.forEach(select => {
+    radios.forEach(radio => {
         records.push({
-            student_id: select.getAttribute("data-student-id"),
-            status: select.value
+            student_id: radio.getAttribute("data-student-id"),
+            status: radio.value
         });
     });
     
@@ -1067,6 +1121,12 @@ async function saveClassroomAttendance() {
             }
             
             loadClassroomStudents();
+            
+            // Refresh history view ONLY if it's currently showing the same class
+            const historyClassSelect = document.getElementById("att-history-class-select");
+            if (historyClassSelect && historyClassSelect.value === classId) {
+                loadClassSessionsHistory(classId);
+            }
         } else {
             const err = await res.json();
             showAlert(`Gagal: ${err.detail || 'Terjadi kesalahan'}`, 'error');
@@ -1078,66 +1138,46 @@ async function saveClassroomAttendance() {
 
 async function loadClassSessionsHistory(classId) {
     const tbody = document.querySelector("#table-attendance-history tbody");
-    const rawPre = document.getElementById("raw-xml-content");
     const historyTitle = document.getElementById("attendance-history-title");
-    const detailsBtn = document.getElementById("tab-session-details-btn");
     
     if (historyTitle) historyTitle.innerText = `Riwayat Presensi - ${classId}`;
-    if (detailsBtn) detailsBtn.style.display = "none";
-    
-    // Reset search input value
-    const searchInput = document.getElementById("att-history-search");
-    if (searchInput) searchInput.value = "";
     
     // Switch active sub-tab back to "Riwayat"
-    const subTabBtns = document.querySelectorAll(".tab-sub-btn");
-    const subTabPanels = document.querySelectorAll(".sub-tab-panel");
-    subTabBtns.forEach(btn => {
-        btn.classList.toggle("active", btn.getAttribute("data-sub") === "history-rendered");
-    });
-    subTabPanels.forEach(p => {
-        p.classList.toggle("active", p.id === "history-rendered-view");
-    });
+    const historyView = document.getElementById("history-rendered-view");
+    const detailsView = document.getElementById("session-details-rendered-view");
+    if (historyView) historyView.classList.add("active");
+    if (detailsView) detailsView.classList.remove("active");
     
-    tbody.innerHTML = `<tr><td colspan="5" class="text-center">Memuat riwayat...</td></tr>`;
-    rawPre.innerText = "Mengambil data XML...";
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center">Memuat rekapitulasi...</td></tr>`;
     
     try {
-        const res = await fetch(`/attendance/classes/${classId}/history`);
-        if (!res.ok) throw new Error("Gagal mengambil data riwayat");
+        const res = await fetch(`/attendance/classes/${classId}/sessions`);
+        if (!res.ok) throw new Error("Gagal mengambil data rekapitulasi");
         
         const xmlText = await res.text();
-        rawPre.innerText = formatXml(xmlText);
         
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(xmlText, "text/xml");
         
-        const records = xmlDoc.getElementsByTagName("record");
+        const sessions = xmlDoc.getElementsByTagName("session");
         classAttendanceHistory = [];
         
-        for (let i = 0; i < records.length; i++) {
-            const rec = records[i];
-            const attDate = rec.getElementsByTagName("attendance_date")[0]?.textContent;
-            const mtgNum = rec.getElementsByTagName("meeting_number")[0]?.textContent;
-            const studentId = rec.getElementsByTagName("student_id")[0]?.textContent;
-            const studentName = rec.getElementsByTagName("student_name")[0]?.textContent;
-            const status = rec.getElementsByTagName("status")[0]?.textContent;
-            const sessionId = rec.getElementsByTagName("session_id")[0]?.textContent;
-            
+        for (let i = 0; i < sessions.length; i++) {
+            const sess = sessions[i];
             classAttendanceHistory.push({
-                attendanceDate: attDate,
-                meetingNumber: mtgNum,
-                studentId: studentId,
-                studentName: studentName,
-                status: status,
-                sessionId: sessionId
+                sessionId: sess.getElementsByTagName("id")[0]?.textContent,
+                meetingNumber: parseInt(sess.getElementsByTagName("meeting_number")[0]?.textContent),
+                attendanceDate: sess.getElementsByTagName("attendance_date")[0]?.textContent,
+                presentCount: sess.getElementsByTagName("present")[0]?.textContent,
+                excusedCount: sess.getElementsByTagName("excused")[0]?.textContent,
+                sickCount: sess.getElementsByTagName("sick")[0]?.textContent,
+                absentCount: sess.getElementsByTagName("absent")[0]?.textContent,
             });
         }
         
         renderAttendanceHistory(classAttendanceHistory);
     } catch (e) {
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">Gagal memuat riwayat: ${e.message}</td></tr>`;
-        rawPre.innerText = `Error: ${e.message}`;
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger">Gagal memuat rekapitulasi: ${e.message}</td></tr>`;
     }
 }
 
@@ -1146,73 +1186,72 @@ function renderAttendanceHistory(records) {
     if (!tbody) return;
     
     tbody.innerHTML = "";
-    if (records.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center">Belum ada riwayat presensi yang cocok.</td></tr>`;
-        return;
-    }
     
-    records.forEach(rec => {
+    for (let i = 1; i <= 16; i++) {
         const tr = document.createElement("tr");
-        tr.style.cursor = "pointer";
-        const statusBadgeClass = getAttendanceBadgeClass(rec.status);
-        const statusLabel = getIndonesianStatusLabel(rec.status);
+        const rec = records.find(r => r.meetingNumber === i);
         
-        tr.innerHTML = `
-            <td>${rec.attendanceDate}</td>
-            <td><strong>Pertemuan ${rec.meetingNumber}</strong></td>
-            <td><code>${rec.studentId}</code></td>
-            <td>${rec.studentName}</td>
-            <td><span class="badge ${statusBadgeClass}">${statusLabel}</span></td>
-        `;
-        
-        tr.addEventListener("click", () => {
-            loadSessionDetails(rec.sessionId);
-        });
-        
+        if (rec) {
+            tr.innerHTML = `
+                <td><strong>Pertemuan ${i}</strong></td>
+                <td>${rec.attendanceDate}</td>
+                <td class="text-center"><span class="badge badge-success">${rec.presentCount}</span></td>
+                <td class="text-center"><span class="badge badge-info">${rec.excusedCount}</span></td>
+                <td class="text-center"><span class="badge badge-warning">${rec.sickCount}</span></td>
+                <td class="text-center"><span class="badge badge-danger">${rec.absentCount}</span></td>
+                <td class="text-center">
+                    <button class="btn btn-outline btn-xs btn-lihat-detail" data-session-id="${rec.sessionId}">Lihat Detail</button>
+                </td>
+            `;
+        } else {
+            tr.innerHTML = `
+                <td><strong>Pertemuan ${i}</strong></td>
+                <td class="text-muted">-</td>
+                <td class="text-center text-muted">-</td>
+                <td class="text-center text-muted">-</td>
+                <td class="text-center text-muted">-</td>
+                <td class="text-center text-muted">-</td>
+                <td class="text-center text-muted">Belum ada data</td>
+            `;
+        }
         tbody.appendChild(tr);
-    });
-}
-
-function filterClassAttendanceHistory() {
-    const query = (document.getElementById("att-history-search")?.value || "").toLowerCase().trim();
-    if (!query) {
-        renderAttendanceHistory(classAttendanceHistory);
-        return;
     }
     
-    const filtered = classAttendanceHistory.filter(rec => 
-        rec.studentId.toLowerCase().includes(query) || 
-        rec.studentName.toLowerCase().includes(query)
-    );
-    
-    renderAttendanceHistory(filtered);
+    // Add event listeners for "Lihat Detail" buttons
+    const detailBtns = tbody.querySelectorAll(".btn-lihat-detail");
+    detailBtns.forEach(btn => {
+        btn.addEventListener("click", () => {
+            const sessionId = btn.getAttribute("data-session-id");
+            loadSessionDetails(sessionId);
+        });
+    });
 }
 
 async function loadSessionDetails(sessionId) {
     const headerDiv = document.getElementById("session-details-header");
     const tbody = document.querySelector("#table-session-details tbody");
-    const rawPre = document.getElementById("raw-xml-content");
     const detailsBtn = document.getElementById("tab-session-details-btn");
     
     tbody.innerHTML = `<tr><td colspan="2" class="text-center">Memuat detail pertemuan...</td></tr>`;
-    if (detailsBtn) detailsBtn.style.display = "inline-block";
+    const historyView = document.getElementById("history-rendered-view");
+    const detailsView = document.getElementById("session-details-rendered-view");
     
-    // Switch active sub-tab to "Detail Pertemuan"
-    const subTabBtns = document.querySelectorAll(".tab-sub-btn");
-    const subTabPanels = document.querySelectorAll(".sub-tab-panel");
-    subTabBtns.forEach(btn => {
-        btn.classList.toggle("active", btn.getAttribute("data-sub") === "session-details-rendered");
-    });
-    subTabPanels.forEach(p => {
-        p.classList.toggle("active", p.id === "session-details-rendered-view");
-    });
+    if (historyView) historyView.classList.remove("active");
+    if (detailsView) detailsView.classList.add("active");
+    
+    const backBtn = document.getElementById("btn-back-to-recap");
+    if (backBtn) {
+        backBtn.onclick = () => {
+            if (historyView) historyView.classList.add("active");
+            if (detailsView) detailsView.classList.remove("active");
+        };
+    }
     
     try {
         const res = await fetch(`/attendance/sessions/${sessionId}`);
         if (!res.ok) throw new Error("Gagal mengambil detail pertemuan");
         
         const xmlText = await res.text();
-        rawPre.innerText = formatXml(xmlText);
         
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(xmlText, "text/xml");
@@ -1241,13 +1280,13 @@ async function loadSessionDetails(sessionId) {
             const statusLabel = getIndonesianStatusLabel(status);
             
             tr.innerHTML = `
-                <td><strong>${stdName}</strong> <span class="text-muted" style="font-size: 11px;">(${stdId})</span></td>
+                <td><code>${stdId}</code></td>
+                <td><strong>${stdName}</strong></td>
                 <td><span class="badge ${statusBadgeClass}">${statusLabel}</span></td>
             `;
             tbody.appendChild(tr);
         }
     } catch (e) {
         tbody.innerHTML = `<tr><td colspan="2" class="text-center text-danger">Gagal memuat detail: ${e.message}</td></tr>`;
-        rawPre.innerText = `Error: ${e.message}`;
     }
 }

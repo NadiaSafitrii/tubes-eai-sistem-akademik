@@ -66,7 +66,6 @@ def init_db():
             student_id TEXT,
             status TEXT,
             created_at TEXT,
-            UNIQUE(session_id, student_id),
             FOREIGN KEY(session_id) REFERENCES attendance_sessions(id),
             FOREIGN KEY(student_id) REFERENCES students(student_id)
         )
@@ -308,18 +307,13 @@ def save_session_in_db(class_id: str, attendance_date: str, records: list, meeti
                 """, (class_id, meeting_number, attendance_date, created_time))
                 session_id = cursor.lastrowid
         else:
-            # Explicit session creation. Check if already exists for safety.
-            cursor.execute("SELECT id FROM attendance_sessions WHERE class_id = ? AND meeting_number = ?", (class_id, meeting_number))
-            sess_row = cursor.fetchone()
-            if sess_row:
-                session_id = sess_row[0]
-            else:
-                created_time = datetime.utcnow().isoformat() + "Z"
-                cursor.execute("""
-                    INSERT INTO attendance_sessions (class_id, meeting_number, attendance_date, created_at)
-                    VALUES (?, ?, ?, ?)
-                """, (class_id, meeting_number, attendance_date, created_time))
-                session_id = cursor.lastrowid
+            # Always create a new session to ensure INSERT instead of overwrite
+            created_time = datetime.utcnow().isoformat() + "Z"
+            cursor.execute("""
+                INSERT INTO attendance_sessions (class_id, meeting_number, attendance_date, created_at)
+                VALUES (?, ?, ?, ?)
+            """, (class_id, meeting_number, attendance_date, created_time))
+            session_id = cursor.lastrowid
             
         created_time = datetime.utcnow().isoformat() + "Z"
         for rec in records:
@@ -335,7 +329,6 @@ def save_session_in_db(class_id: str, attendance_date: str, records: list, meeti
             cursor.execute("""
                 INSERT INTO attendance_details (session_id, student_id, status, created_at)
                 VALUES (?, ?, ?, ?)
-                ON CONFLICT(session_id, student_id) DO UPDATE SET status=excluded.status
             """, (session_id, student_id, status.lower(), created_time))
             
         conn.commit()
@@ -409,6 +402,7 @@ def get_class_sessions(class_id: str):
         SELECT s.id, s.meeting_number, s.attendance_date, s.created_at,
                SUM(CASE WHEN d.status = 'present' THEN 1 ELSE 0 END) as present_count,
                SUM(CASE WHEN d.status = 'excused' THEN 1 ELSE 0 END) as excused_count,
+               SUM(CASE WHEN d.status = 'sick' THEN 1 ELSE 0 END) as sick_count,
                SUM(CASE WHEN d.status = 'absent' THEN 1 ELSE 0 END) as absent_count
         FROM attendance_sessions s
         LEFT JOIN attendance_details d ON s.id = d.session_id
@@ -443,8 +437,10 @@ def get_class_sessions(class_id: str):
         present.text = str(row[4])
         excused = ET.SubElement(counts, "excused")
         excused.text = str(row[5])
+        sick = ET.SubElement(counts, "sick")
+        sick.text = str(row[6])
         absent = ET.SubElement(counts, "absent")
-        absent.text = str(row[6])
+        absent.text = str(row[7])
         
     return to_xml_response(root)
 
